@@ -274,7 +274,7 @@ if sys.platform.startswith('win'):
         if userkey is None:
             raise ADEPTError('Could not locate privateLicenseKey')
         userkey = userkey.decode('base64')
-        userkey = AES.new(keykey, AES.MODE_CBC).decrypt(userkey)
+        userkey = AES.new(keykey, AES.MODE_CBC, IV='\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00').decrypt(userkey)
         userkey = userkey[26:-ord(userkey[-1])]
         with open(keypath, 'wb') as f:
             f.write(userkey)
