@@ -226,31 +226,13 @@ if sys.platform.startswith('win'):
         return CryptUnprotectData
     CryptUnprotectData = CryptUnprotectData()
 
-    def retrieve_key(keypath):
-        if AES is None:
-            tkMessageBox.showerror(
-                "ADEPT Key",
-                "This script requires PyCrypto, which must be installed "
-                "separately.  Read the top-of-script comment for details.")
-            return False
-        root = GetSystemDirectory().split('\\')[0] + '\\'
-        serial = GetVolumeSerialNumber(root)
-        vendor = cpuid0()
-        signature = struct.pack('>I', cpuid1())[1:]
-        user = GetUserName()
-        entropy = struct.pack('>I12s3s13s', serial, vendor, signature, user)
+    def retreive_userkey():
         cuser = winreg.HKEY_CURRENT_USER
-        try:
-            regkey = winreg.OpenKey(cuser, DEVICE_KEY_PATH)
-        except WindowsError:
-            raise ADEPTError("Adobe Digital Editions not activated")
-        device = winreg.QueryValueEx(regkey, 'key')[0]
-        keykey = CryptUnprotectData(device, entropy)
-        userkey = None
         try:
             plkroot = winreg.OpenKey(cuser, PRIVATE_LICENCE_KEY_PATH)
         except WindowsError:
             raise ADEPTError("Could not locate ADE activation")
+
         for i in xrange(0, 16):
             try:
                 plkparent = winreg.OpenKey(plkroot, "%04d" % (i,))
@@ -268,16 +250,72 @@ if sys.platform.startswith('win'):
                 if ktype != 'privateLicenseKey':
                     continue
                 userkey = winreg.QueryValueEx(plkkey, 'value')[0]
-                break
-            if userkey is not None:
-                break
-        if userkey is None:
-            raise ADEPTError('Could not locate privateLicenseKey')
-        userkey = userkey.decode('base64')
-        userkey = AES.new(keykey, AES.MODE_CBC, IV='\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00').decrypt(userkey)
+                print 'userkey: ' + str(userkey)
+                return userkey.decode('base64')
+                
+        raise ADEPTError('Could not locate privateLicenseKey')
+    
+    def retreive_encrypted_key(): 
+        cuser = winreg.HKEY_CURRENT_USER
+        try:
+            regkey = winreg.OpenKey(cuser, DEVICE_KEY_PATH)
+        except WindowsError:
+            raise ADEPTError("Adobe Digital Editions not activated")
+        device = winreg.QueryValueEx(regkey, 'key')[0]
+        
+        print 'entrypted device key len ' + str(len(device))
+        print ":".join("{0:02x}".format(ord(c)) for c in device)
+
+        return device
+        
+    def get_cpypt_entropy():
+        root = GetSystemDirectory().split('\\')[0] + '\\'
+        serial = GetVolumeSerialNumber(root)
+        print 'serial: "%s"', serial
+        vendor = cpuid0()
+        print 'vendor: %s ' % vendor
+        print 'cpuid1: ' + str(cpuid1())
+        print 
+        signature = struct.pack('>I', cpuid1())[1:]
+        print 'sign: %s' % ":".join("{0:02x}".format(ord(c)) for c in str(signature))
+        user = GetUserName()
+        print 'user: "%s"' % user
+        entropy = struct.pack('>I12s3s13s', serial, vendor, signature, user)        
+        print 'entropy len: ' + str(len(entropy))
+        print ":".join("{0:02x}".format(ord(c)) for c in entropy)
+        
+        return entropy
+        
+    def uncrypt_device_key(encrypted_device_key, entropy):
+        keykey = CryptUnprotectData(encrypted_device_key, entropy)
+        
+        print 'keykey len: ' + str(len(keykey))
+        print ":".join("{0:02x}".format(ord(c)) for c in keykey)
+        
+        return keykey
+        
+    def retrieve_key(keypath):
+        print 'retrieve_key(%s)' % keypath
+        if AES is None:
+            tkMessageBox.showerror(
+                "ADEPT Key",
+                "This script requires PyCrypto, which must be installed "
+                "separately.  Read the top-of-script comment for details.")
+            return False
+
+        entropy = get_cpypt_entropy()
+        cuser = winreg.HKEY_CURRENT_USER
+        device = retreive_encrypted_key()
+        
+        keykey = uncrypt_device_key(device, entropy)
+      
+        userkey = retreive_userkey()
+        aes = AES.new(keykey, mode=AES.MODE_CBC, IV='\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
+        userkey = aes.decrypt(userkey)
         userkey = userkey[26:-ord(userkey[-1])]
         with open(keypath, 'wb') as f:
             f.write(userkey)
+        print 'Wrote file to %s' % keypath
         return True
 
 elif sys.platform.startswith('darwin'):
@@ -360,13 +398,18 @@ def main(argv=sys.argv):
     try:
         success = retrieve_key(keypath)
     except ADEPTError, e:
-        tkMessageBox.showerror("ADEPT Key", "Error: " + str(e))
+        print "ADEPT Key Error: " + str(e)
+        #tkMessageBox.showerror("ADEPT Key", "Error: " + str(e))
     except Exception:
-        root.wm_state('normal')
-        root.title('ADEPT Key')
-        text = traceback.format_exc()
-        ExceptionDialog(root, text).pack(fill=Tkconstants.BOTH, expand=1)
-        root.mainloop()
+    
+        print 'Exception happened yo'
+        print  traceback.format_exc()
+    
+        #root.wm_state('normal')
+        #root.title('ADEPT Key')
+        #text = traceback.format_exc()
+        #ExceptionDialog(root, text).pack(fill=Tkconstants.BOTH, expand=1)
+        #root.mainloop()
     if not success:
         return 1
     tkMessageBox.showinfo(
@@ -375,3 +418,4 @@ def main(argv=sys.argv):
 
 if __name__ == '__main__':
     sys.exit(main())
+

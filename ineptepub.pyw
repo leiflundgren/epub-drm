@@ -225,8 +225,7 @@ def _load_crypto_pycrypto():
 
     class AES(object):
         def __init__(self, key):
-            self._aes = _AES.new(key, _AES.MODE_CBC)
-
+            self._aes = _AES.new(key, _AES.MODE_CBC, IV='\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
         def decrypt(self, data):
             return self._aes.decrypt(data)
 
@@ -316,7 +315,7 @@ def cli_main(argv=sys.argv):
         namelist = set(inf.namelist())
         if 'META-INF/rights.xml' not in namelist or \
            'META-INF/encryption.xml' not in namelist:
-            raise ADEPTError('%s: not an ADEPT EPUB' % (inpath,))
+            raise ADEPTError('%s: not an ADEPT EPUB. Didnt find rights.xml/encryption.xml-files  %s' % (inpath, ", ".join([name for name in namelist if name.startswith("META-INF")])) )
         for name in META_NAMES:
             namelist.remove(name)
         rights = etree.fromstring(inf.read('META-INF/rights.xml'))
@@ -428,7 +427,7 @@ class DecryptionDialog(Tkinter.Frame):
         try:
             cli_main(argv)
         except Exception, e:
-            self.status['text'] = 'Error: ' + str(e)
+            self.status['text'] = 'Error: ' + unicode(e).encode('ascii', 'xmlcharrefreplace')
             return
         self.status['text'] = 'File successfully decrypted'
 
@@ -453,3 +452,4 @@ if __name__ == '__main__':
     if len(sys.argv) > 1:
         sys.exit(cli_main())
     sys.exit(gui_main())
+
